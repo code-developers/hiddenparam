@@ -5,10 +5,10 @@ use url::Url;
 
 pub fn get_config() -> (Config, usize) {
 
-    let app = App::new("x8")
+    let app = App::new("hiddenparam")
         .setting(AppSettings::ArgRequiredElseHelp)
         .version(crate_version!())
-        .author("sh1yo <sh1yo@tuta.io>")
+        .author("krishpranav")
         .about("Hidden parameters discovery suite")
         .arg(Arg::with_name("url")
             .short("u")
@@ -230,5 +230,34 @@ pub fn get_config() -> (Config, usize) {
                 .help("Prefer http/2 over http/1.1")
         );
 
+    let args = app.clone().get_matches();
+    
+    let delay = match args.value_of("delay") {
+        Some(val) => match val.parse() {
+            Ok(val) => Duration::from_millis(val),
+            Err(_) => {
+                writeln!(io::stderr(), "Unable to parse 'delay' value").ok();
+                std::process::exit(1);
+            }
+        },
+        None::Duration::from_millis(0),
+    };
+
+    let max: usize = match args.value_of("max") {
+        Some(val) => match val.parse() {
+            Ok(val) => val,
+            Err(_) => {
+                writeln!(io::stderr(), "Unable to parse 'max' value ").ok();
+                std::process::exit(1);
+            }
+        },
+        None => {
+            if args.is_present("as-body") {
+                512
+            } else {
+                128
+            }
+        }
+    };
 
 }
