@@ -9,7 +9,7 @@ pub fn get_config() -> (Config, usize) {
         .setting(AppSettings::ArgRequiredElseHelp)
         .version(crate_version!())
         .author("krishpranav")
-        .about("Hidden parameters discovery suite")
+        .about("A simple hidden parameter discovery tool")
         .arg(Arg::with_name("url")
             .short("u")
             .long("url")
@@ -231,7 +231,7 @@ pub fn get_config() -> (Config, usize) {
         );
 
     let args = app.clone().get_matches();
-    
+
     let delay = match args.value_of("delay") {
         Some(val) => match val.parse() {
             Ok(val) => Duration::from_millis(val),
@@ -240,14 +240,14 @@ pub fn get_config() -> (Config, usize) {
                 std::process::exit(1);
             }
         },
-        None::Duration::from_millis(0),
+        None => Duration::from_millis(0),
     };
 
     let max: usize = match args.value_of("max") {
         Some(val) => match val.parse() {
             Ok(val) => val,
             Err(_) => {
-                writeln!(io::stderr(), "Unable to parse 'max' value ").ok();
+                writeln!(io::stderr(), "Unable to parse 'max' value").ok();
                 std::process::exit(1);
             }
         },
@@ -260,4 +260,264 @@ pub fn get_config() -> (Config, usize) {
         }
     };
 
+    let value_size: usize = match args.value_of("value_size") {
+        Some(val) => match val.parse() {
+            Ok(val) => val,
+            Err(_) => {
+                writeln!(io::stderr(), "Unable to parse 'value_size' value").ok();
+                std::process::exit(1);
+            }
+        },
+        None => {
+            5
+        }
+    };
+
+    let learn_requests_count: usize = match args.value_of("learn_requests_count") {
+        Some(val) => match val.parse() {
+            Ok(val) => val,
+            Err(_) => {
+                writeln!(io::stderr(), "Unable to parse 'learn_requests_count' value").ok();
+                std::process::exit(1);
+            }
+        },
+        None => {
+            9
+        }
+    };
+
+    let concurrency: usize = match args.value_of("concurrency") {
+        Some(val) => match val.parse() {
+            Ok(val) => val,
+            Err(_) => {
+                writeln!(io::stderr(), "Unable to parse 'concurrency' value").ok();
+                std::process::exit(1);
+            }
+        },
+        None => {
+            1
+        }
+    };
+
+    let mut headers: HashMap<String, String> = HashMap::new();
+    if let Some(val) = args.values_of("headers") {
+        for header in val {
+            let mut k_v = header.split(':');
+            let key = match k_v.next() {
+                Some(val) => val,
+                None => {
+                    writeln!(io::stderr(), "Unable to parse headers").ok();
+                    std::process::exit(1);
+                }
+            };
+            let value: String = [
+                match k_v.next() {
+                    Some(val) => val.trim().to_owned(),
+                    None => {
+                        writeln!(io::stderr(), "Unable to parse headers").ok();
+                        std::process::exit(1);
+                    }
+                },
+                k_v.map(|x| ":".to_owned() + x).collect(),
+            ].concat();
+
+            headers.insert(key.to_string(), value);
+        }
+    };
+
+    let verbose: u8 = match args.value_of("verbose") {
+        Some(val) => val.parse().expect("incorrect verbose"),
+        None => 1,
+    };
+
+    let url = match Url::parse(args.value_of("url").unwrap_or("https://example.com")) {
+        Ok(val) => val,
+        Err(err) => {
+            writeln!(io::stderr(), "Unable to parse target url: {}", err).ok();
+            std::process::exit(1);
+        },
+    };
+
+    let host = url.host_str().unwrap();
+    let mut path = url[url::Position::BeforePath..].to_string();
+
+    let body = args.value_of("body").unwrap_or("");
+
+    //check whether it is possible to automatically fix body type
+    //- at the end means "specified automatically"
+    let body_type = if args.value_of("body-type").is_none() && !body.is_empty() && body.starts_with('{') {
+        String::from("json-")
+    } else {
+        args.value_of("body-type").unwrap_or("urlencode-").to_string()
+    };
+
+    let body = if !body.contains("%s") && args.is_present("as-body") {
+        adjust_body(body, &body_type)
+    } else {
+        body.to_string()
+    };
+
+    //set default headers if weren't specified by a user.
+    if !headers.keys().any(|i| i.contains("User-Agent")) {
+        headers.insert(String::from("User-Agent"), String::from("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.97 Safari/537.36"));
+    }
+
+    if !args.is_present("disable-cachebuster") {
+        if !headers.keys().any(|i| i.contains("Accept")) {
+            headers.insert(String::from("Accept"), String::from("*/*, text/{{random}}"));
+        }
+        if !headers.keys().any(|i| i.contains("Accept-Language")) {
+            headers.insert(
+                String::from("Accept-Language"),
+                String::from("en-US, {{random}};q=0.9, *;q=0.5"),
+            );
+        }
+        if !headers.keys().any(|i| i.contains("Accept-Charset")) {
+            headers.insert(
+                String::from("Accept-Charset"),
+                String::from("utf-8, iso-8859-1;q=0.5, {{random}};q=0.2, *;q=0.1"),
+            );
+        }
+    }
+
+    if !headers.keys().any(|i| i.contains("Content-Type")) && (args.is_present("as-body") || args.value_of("body").is_some()) {
+        if body_type.contains("json") {
+            headers.insert(
+                String::from("Content-Type"),
+                String::from("application/json"),
+            );
+        } else {
+            headers.insert(
+                String::from("Content-Type"),
+                String::from("application/x-www-form-urlencoded"),
+            );
+        }
+    }
+
+    let mut url = args
+        .value_of("url")
+        .unwrap_or("https://something.something")
+        .to_string();
+
+    if !args.is_present("as-body") && url.contains('?') && url.contains('=') && !url.contains("%s") {
+        url.push_str("&%s");
+        path.push_str("&%s");
+    } else if !args.is_present("as-body") && !url.contains("%s") {
+        url.push_str("?%s");
+        path.push_str("?%s");
+    }
+
+    let mut parameter_template = args.value_of("parameter_template").unwrap_or("");
+
+    if !parameter_template.is_empty()
+        && (!parameter_template.contains("%k") || !parameter_template.contains("%v"))
+        && !args.is_present("force") {
+            writeln!(io::stderr(), "param_template lacks important variables like %k or %v").ok();
+            std::process::exit(1);
+    }
+
+    if parameter_template.is_empty() {
+        if body_type.contains("json") && args.is_present("as-body") {
+            parameter_template = "\"%k\":\"%v\", ";
+        } else {
+            parameter_template = "%k=%v&";
+        }
+    }
+
+
+    let custom_keys: Vec<String> = match args.values_of("custom-parameters") {
+        Some(val) => {
+            val.map(|x| x.to_string()).collect()
+        }
+        None =>["admin", "bot", "captcha", "debug", "disable", "encryption", "env", "show", "sso", "test", "waf"]
+            .iter()
+            .map(|x| x.to_string())
+            .collect()
+    };
+
+    let custom_values: Vec<String> = match args.values_of("custom-values") {
+        Some(val) => {
+            val.map(|x| x.to_string()).collect()
+        }
+        None => ["1", "0", "false", "off", "null", "true", "yes", "no"]
+            .iter()
+            .map(|x| x.to_string())
+            .collect()
+    };
+
+    let mut custom_parameters: HashMap<String, Vec<String>> = HashMap::with_capacity(custom_keys.len());
+    for key in custom_keys.iter() {
+        let mut values: Vec<String> = Vec::with_capacity(custom_values.len());
+        for value in custom_values.iter() {
+            values.push(value.to_string());
+        }
+        custom_parameters.insert(key.to_string(), values);
+    }
+
+
+    let request = match args.value_of("request") {
+        Some(val) => match fs::read_to_string(val) {
+            Ok(val) => val,
+            Err(err) => {
+                writeln!(io::stderr(), "Unable to open request file: {}", err).ok();
+                std::process::exit(1);
+            }
+        },
+        None => String::new(),
+    };
+
+    if args.is_present("disable-colors") {
+        colored::control::set_override(false);
+    }
+
+    let mut config = Config {
+        method: args.value_of("method").unwrap_or("GET").to_string(),
+        initial_url: args.value_of("url").unwrap_or("").to_string(),
+        url,
+        host: host.to_string(),
+        path,
+        wordlist: args.value_of("wordlist").unwrap_or("").to_string(),
+        parameter_template: parameter_template.to_string(),
+        custom_parameters,
+        headers,
+        body,
+        body_type,
+        proxy: args.value_of("proxy").unwrap_or("").to_string(),
+        replay_proxy: args.value_of("replay-proxy").unwrap_or("").to_string(),
+        replay_once: args.is_present("replay-once"),
+        output_file: args.value_of("output").unwrap_or("").to_string(),
+        save_responses: args.value_of("save-responses").unwrap_or("").to_string(),
+        output_format: args.value_of("output-format").unwrap_or("").to_string(),
+        as_body: args.is_present("as-body"),
+        force: args.is_present("force"),
+        disable_response_correction: args.is_present("disable-response-correction"),
+        disable_custom_parameters: args.is_present("disable-custom-parameters"),
+        disable_progress_bar: args.is_present("disable-progress-bar"),
+        follow_redirects: args.is_present("follow-redirects"),
+        encode: args.is_present("encode"),
+        is_json: args.is_present("is-json"),
+        test: args.is_present("test"),
+        verbose,
+        disable_cachebuster: args.is_present("disable-cachebuster"),
+        delay,
+        value_size,
+        learn_requests_count,
+        max,
+        concurrency,
+        http2: args.is_present("http2")
+    };
+
+    config = if !request.is_empty() {
+        match parse_request(args.value_of("proto").unwrap_or("https"), &request, config) {
+            Some(val) => val,
+            None => {
+                writeln!(io::stderr(), "Unable to parse request file.").ok();
+                std::process::exit(1);
+            }
+        }
+    } else {
+        config
+    };
+
+    (config, max)
 }
