@@ -35,3 +35,26 @@ impl Processor {
         self.result
     }
 }
+
+struct Context {
+    pub start: Option<usize>,
+    pub data: VecDeque<String>,
+    pub changed: bool,
+    
+    pub counter: usize,
+    pub equaled: usize,
+    pub removed: usize,
+    pub inserted: usize
+}
+
+impl Context {
+    pub fn new() -> Self {
+        Self {
+            start: None,
+            data: VecDeque::new(),
+            changed: false,
+
+            counter: 0
+        }
+    }
+}
