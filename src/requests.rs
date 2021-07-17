@@ -102,3 +102,56 @@ pub async fn random_request(
         reflections
     ).await
 }
+
+fn create_request(
+    url: &str,
+    body: String,
+    config: &Config,
+    client: &Client
+) -> reqwest::RequestBuilder {
+    let mut client = if config.as_body {
+        match config.method.as_str() {
+            "GET" => client.get(url).body(body),
+            "POST" => client.post(url).body(body),
+            "PUT" => client.put(url).body(body),
+            "PATCH" => client.patch(url).body(body),
+            "DELETE" => client.delete(url).body(body),
+            "HEAD" => client.head(url).body(body),
+            _ => {
+                writeln!(io::stderr(), "Method is not supported").ok();
+                std::process::exit(1);
+            },
+        }
+    } else {
+        match config.method.as_str() {
+            "GET" => client.get(url),
+            "POST" => client.post(url),
+            "PUT" => client.put(url),
+            "PATCH" => client.patch(url),
+            "DELETE" => client.delete(url),
+            "HEAD" => client.head(url),
+            _ => {
+                writeln!(io::stderr(), "Method is not supported").ok();
+                std::process::exit(1);
+            }
+        }
+    };
+
+    client = if config.as_body && !config.disable_cachebuster {
+        client.query(&[(random_line(config.value_size), random_line(config.value_size))])
+    } else {
+        client
+    };
+
+    client = if !config.as_body && !config.body.is_empty() {
+        client.body(config.body.clone())
+    } else {
+        client
+    };
+
+    for (key, value) in config.headers.iter() {
+        client = client.header(key, value.replace("{{random}}", &random_line(config.value_size)));
+    }
+
+    client
+}
