@@ -193,3 +193,46 @@ pub async fn generate_data(config: &Config, client: &Client, query: &HashMap<Str
         heuristic(&response.text).join(", ")
     ).ok();
 }
+
+pub fn adjust_body(body: &str, t: &str) -> String {
+    let mut body = body.to_string();
+
+    //if type is json and body has parameters -> add an injection to the end
+    if t.contains("json") && !body.is_empty() && body.contains('"') {
+        body.pop();
+        body.push_str(", %s}");
+        body
+    } else if t.contains("json") {
+        String::from("{%s}")
+    //suppose that body type is urlencode
+    } else if !body.is_empty()  {
+        body.push_str("&%s");
+        body
+    } else {
+        body.push_str("%s");
+        body
+    }
+}
+
+pub fn make_body(config: &Config, query: &HashMap<String, String>) -> String {
+    let mut body: String = String::new();
+
+    for (k, v) in query {
+        if config.body_type.contains("json") && RE_JSON_WORDS_WITHOUT_QUOTES.is_match(v) {
+            body.push_str(&config.parameter_template.replace("%k", k).replace("\"%v\"", v));
+        } else {
+            body.push_str(&config.parameter_template.replace("%k", k).replace("%v", v));
+        }
+    }
+
+    if config.body_type.contains("json") {
+        body.truncate(body.len().saturating_sub(2)) //remove the last ', '
+    }
+
+    body = match config.encode {
+        true =>config.body.replace("%s", &utf8_percent_encode(&body, &FRAGMENT).to_string()).replace("{{random}}", &random_line(config.value_size)),
+        false => config.body.replace("%s", &body).replace("{{random}}", &random_line(config.value_size))
+    };
+
+    body
+}
