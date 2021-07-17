@@ -1,3 +1,4 @@
+// use crates 
 use crate::{
     structs::{Config, ResponseData, Stable},
     utils::{compare, beautify_html, beautify_json, make_body, make_query, make_hashmap, random_line},
@@ -11,7 +12,6 @@ use std::{
     io::{self, Write},
 };
 
-//makes first requests and checks page behavior
 pub async fn empty_reqs(
     config: &Config,
     initial_response: &ResponseData,
@@ -29,7 +29,6 @@ pub async fn empty_reqs(
     for i in 0..count {
         let response = random_request(config, client, reflections_count, max).await;
 
-        //progress bar
         if config.verbose > 0 && !config.disable_progress_bar {
             write!(
                 io::stdout(),
@@ -97,7 +96,7 @@ pub async fn random_request(
         &client,
         &make_hashmap(
             &(0..max).map(|_| random_line(config.value_size)).collect::<Vec<String>>(),
-            config.value_size
+            config.value_size,
         ),
         reflections
     ).await
@@ -154,4 +153,140 @@ fn create_request(
     }
 
     client
+}
+
+pub async fn request(
+    config: &Config,
+    client: &Client,
+    initial_query: &HashMap<String, String>,
+    reflections: usize,
+) -> ResponseData {
+    let mut query: HashMap<String, String> = HashMap::with_capacity(initial_query.len());
+    for (k, v) in initial_query.iter() {
+        query.insert(k.to_string(), v.replace("%random%_", ""));
+    }
+
+    let body: String = if config.as_body && !query.is_empty() {
+        make_body(&config, &query)
+    } else {
+        String::new()
+    };
+
+    std::thread::sleep(config.delay);
+
+    let url: String = if config.url.contains("%s") {
+        config.url.replace("%s", &make_query(&query, config))
+    } else {
+        config.url.clone()
+    };
+
+    let url: &str = &url;
+
+    let res = match create_request(url, body.clone(), config, client).send().await {
+        Ok(val) => val,
+        Err(_) => {
+            let mut random_query: HashMap<String, String> = HashMap::with_capacity(query.len());
+            for (k, v) in make_hashmap(
+                &(0..query.len()).map(|_| random_line(config.value_size)).collect::<Vec<String>>(),
+                config.value_size,
+            ) {
+                random_query.insert(k.to_string(), v.replace("%random%_", ""));
+            }
+            let body: String = if config.as_body && !query.is_empty() {
+                make_body(&config, &random_query)
+            } else {
+                String::new()
+            };
+            let url: String = if config.url.contains("%s") {
+                config.url.replace("%s", &make_query(&random_query, config))
+            } else {
+                config.url.clone()
+            };
+
+            match create_request(&url, body.clone(), config, client).send().await {
+                Ok(_) => return ResponseData {
+                                    text: String::new(),
+                                    code: 0,
+                                    reflected_params: Vec::new(),
+                                },
+                Err(err) => {
+                    writeln!(io::stderr(), "[!] {} {:?}", url, err).ok();
+                    match err.source() {
+                        Some(val) => if val.to_string() == "invalid HTTP version parsed" && !config.http2 {
+                             writeln!(io::stdout(), "[!] {}", "Try to use --http2 option".bright_red()).ok();
+                             std::process::exit(1);
+                        },
+                        None => ()
+                    };
+                    writeln!(io::stderr(), "[~] error at the {} observed. Wait 50 sec and repeat.", config.url).ok();
+                    std::thread::sleep(Duration::from_secs(50));
+                    match create_request(&url, body.clone(), config, client).send().await {
+                        Ok(_) => return ResponseData {
+                            text: String::new(),
+                            code: 0,
+                            reflected_params: Vec::new(),
+                        },
+                        Err(_) => {
+                            writeln!(io::stderr(), "[!] unable to reach {}", config.url).ok();
+                            std::process::exit(1);
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    let code = res.status().as_u16();
+    let mut headers: BTreeMap<String, String> = BTreeMap::new();
+    for (key, value) in res.headers().iter() {
+        headers.insert(
+            key.as_str().to_string(),
+            value.to_str().unwrap_or("").to_string(),
+        );
+    }
+
+    let body = match res.text().await {
+        Ok(val) => {
+            if config.disable_response_correction {
+                val
+            } else if config.is_json
+                || (headers.get("content-type").is_some()
+                    && headers.get("content-type").unwrap().as_str().contains(&"json"))
+            {
+                beautify_json(&val)
+            } else if headers.get("content-type").is_some()
+                && headers.get("content-type").unwrap().as_str().contains(&"html")
+            {
+                beautify_html(&val)
+            } else {
+                val
+            }
+        }
+        Err(_) => String::new(),
+    };
+
+    let mut reflected_params: Vec<String> = Vec::new();
+
+    for (key, value) in initial_query.iter() {
+        if value.contains("%random%_") && body.matches(&value.replace("%random%_", "").as_str()).count() as usize != reflections {
+
+            reflected_params.push(key.to_string())
+        }
+    }
+
+    let mut text = String::new();
+    for (key, value) in headers.iter() {
+        text.push_str(&key);
+        text.push_str(&": ");
+        text.push_str(&value);
+        text.push_str(&"\n");
+    }
+    text.push_str(&"\n\n");
+    text.push_str(&body);
+
+    ResponseData {
+        text,
+        code,
+        reflected_params,
+    }
 }
