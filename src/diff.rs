@@ -19,3 +19,19 @@ struct Processor {
     context: Context,
     result: Vec<String>,
 }
+
+impl Processor {
+    pub fn new() -> Self {
+        Self {
+            inserted: 0,
+            removed: 0,
+
+            context: Context::new(),
+            result: Vec::new(),
+        }
+    }
+
+    pub fn result(self) -> Vec<String> {
+        self.result
+    }
+}
