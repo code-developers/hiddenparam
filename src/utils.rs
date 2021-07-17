@@ -172,3 +172,24 @@ pub fn generate_request(config: &Config, initial_query: &HashMap<String, String>
 
     req
 }
+
+pub async fn generate_data(config: &Config, client: &Client, query: &HashMap<String, String>) {
+    let req = generate_request(config, query);
+
+    writeln!(io::stdout(), "Request:\n{}", req).ok();
+
+    let response = request(config, client, &query, 0).await;
+
+    writeln!(
+        io::stdout(),
+        "Response:\nCode: {}\n\n{}",
+        response.code,
+        response.text
+    ).ok();
+
+    writeln!(
+        io::stdout(),
+        "Possible parameters: {}",
+        heuristic(&response.text).join(", ")
+    ).ok();
+}
