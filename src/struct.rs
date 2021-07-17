@@ -1,16 +1,16 @@
 use std::{collections::HashMap, time::Duration};
 
-
-##[derive(Debug)]
+#[derive(Debug)]
 pub struct ResponseData {
     pub text: String,
-    pub code: u16
+    pub code: u16,
     pub reflected_params: Vec<String>,
 }
 
+
 #[derive(Debug, Clone)]
 pub struct FuturesData {
-    pub remaining_params: Vec<String>
+    pub remaining_params: Vec<String>,
     pub found_params: Vec<String>
 }
 
@@ -44,11 +44,16 @@ pub struct Config {
     pub verbose: u8,
     pub is_json: bool,
     pub disable_cachebuster: bool,
-    //pub verify: bool,
     pub delay: Duration,
     pub value_size: usize,
     pub learn_requests_count: usize,
     pub max: usize,
     pub concurrency: usize,
     pub http2: bool
+}
+
+#[derive(Debug)]
+pub struct Stable {
+    pub body: bool,
+    pub reflections: bool,
 }
