@@ -54,7 +54,35 @@ impl Context {
             data: VecDeque::new(),
             changed: false,
 
-            counter: 0
+            counter: 0,
+            equaled: 0,
+            removed: 0,
+            inserted: 0,
         }
+    }
+
+    pub fn to_vec(&self, removed: usize, inserted: usize) -> Vec<String> {
+        let mut start = if let Some(start) = self.start {
+            start
+        } else {
+            return Vec::new();
+        };
+        if start == 0 {
+            start = 1;
+        }
+        let mut data = Vec::with_capacity(self.data.len() + 1);
+        if self.changed {
+            data.push(format!(
+                "-{},{} +{},{}",
+                start,
+                self.equaled + self.removed,
+                start + inserted - removed,
+                self.equaled + self.inserted,
+            ));
+            for s in self.data.iter() {
+                data.push(s.to_owned());
+            }
+        }
+        data
     }
 }
