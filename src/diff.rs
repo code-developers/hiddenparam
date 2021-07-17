@@ -40,11 +40,11 @@ struct Context {
     pub start: Option<usize>,
     pub data: VecDeque<String>,
     pub changed: bool,
-    
+
     pub counter: usize,
     pub equaled: usize,
     pub removed: usize,
-    pub inserted: usize
+    pub inserted: usize,
 }
 
 impl Context {
@@ -84,5 +84,93 @@ impl Context {
             }
         }
         data
+    }
+}
+
+impl diffs::Diff for Processor {
+    type Error = io::Error;
+
+    fn equal(&mut self, old: usize, _new: usize, len: usize) -> Result<(), Self::Error> {
+        if self.context.start.is_none() {
+            self.context.start = Some(old);
+        }
+
+        self.context.counter = 0;
+        for i in old..old + len {
+            if !self.context.changed {
+                if let Some(ref mut start) = self.context.start {
+                    *start += 1;
+                }
+                self.context.counter += 1;
+            }
+            if self.context.changed && self.context.counter == 0 && len > 0 {
+                self.result
+                    .append(&mut self.context.to_vec(self.removed, self.inserted));
+
+                let mut context = Context::new();
+
+                context.counter = 0;
+                context.equaled = 0;
+                context.start = Some(i - 1);
+
+                self.removed += self.context.removed;
+                self.inserted += self.context.inserted;
+                self.context = context;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn delete(&mut self, old: usize, len: usize) -> Result<(), Self::Error> {
+        if self.context.start.is_none() {
+            self.context.start = Some(old);
+        }
+
+        self.context.changed = true;
+        self.context.removed += len;
+
+        Ok(())
+    }
+
+    fn insert(&mut self, old: usize, _new: usize, new_len: usize) -> Result<(), Self::Error> {
+        if self.context.start.is_none() {
+            self.context.start = Some(old);
+        }
+
+        self.context.changed = true;
+        self.context.inserted += new_len;
+
+        Ok(())
+    }
+
+    fn replace(
+        &mut self,
+        old: usize,
+        old_len: usize,
+        _new: usize,
+        new_len: usize,
+    ) -> Result<(), Self::Error> {
+        if self.context.start.is_none() {
+            self.context.start = Some(old);
+        }
+
+        self.context.changed = true;
+        self.context.removed += old_len;
+        self.context.inserted += new_len;
+
+        Ok(())
+    }
+
+    fn finish(&mut self) -> Result<(), Self::Error> {
+        let truncation = self.context.counter;
+        if self.context.data.len() > truncation {
+            let new_size = self.context.data.len() - truncation;
+            self.context.equaled -= truncation;
+            self.context.data.truncate(new_size);
+        }
+        self.result
+            .append(&mut self.context.to_vec(self.removed, self.inserted));
+        Ok(())
     }
 }
