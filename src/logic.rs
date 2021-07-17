@@ -44,6 +44,24 @@ pub async fn cycles(
         let cloned_diffs = Arc::clone(&shared_diffs);
         let cloned_green_lines = Arc::clone(&shared_green_lines);
 
+        async move {
+            let query = &make_hashmap(&chunk, config.value_size);
+            let response = request(config, client, query, reflections_count).await;
+
+            if config.verbose > 0 && !config.disable_progress_bar {
+                write!(
+                    io::stdout(),
+                    "{} {}/{}   \r"
+                    &"-> ".bright_yellow(),
+                    count,
+                    all
+                ).ok();
+                
+                io::stdout().flush().ok();
+            }
+        }
     }
+
+    
 
 }
