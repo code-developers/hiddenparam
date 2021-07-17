@@ -85,3 +85,20 @@ pub async fn empty_reqs(
     }
     (diffs, stable)
 }
+
+pub async fn random_request(
+    config: &Config,
+    client: &Client,
+    reflections: usize,
+    max: usize,
+) -> ResponseData {
+    request(
+        &config,
+        &client,
+        &make_hashmap(
+            &(0..max).map(|_| random_line(config.value_size)).collect::<Vec<String>>(),
+            config.value_size
+        ),
+        reflections
+    ).await
+}
