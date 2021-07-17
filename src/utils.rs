@@ -108,3 +108,67 @@ pub fn heuristic(body: &str) -> Vec<String> {
     found.dedup();
     found
 }
+
+pub fn generate_request(config: &Config, initial_query: &HashMap<String, String>) -> String {
+    let mut query: HashMap<String, String> = HashMap::with_capacity(initial_query.len());
+    for (k, v) in initial_query.iter() {
+        query.insert(k.to_string(), v.replace("%random%_", ""));
+    }
+
+    let mut req: String = String::with_capacity(1024);
+    req.push_str(&config.url);
+    req.push('\n');
+    req.push_str(&config.method);
+    req.push(' ');
+
+    if !config.as_body {
+        let mut query_string = String::new();
+        for (k, v) in query.iter() {
+            query_string.push_str(k);
+            query_string.push('=');
+            query_string.push_str(v);
+            query_string.push('&');
+        }
+        query_string.pop(); //remove the last &
+
+        query_string = if config.encode {
+            utf8_percent_encode(&query_string, &FRAGMENT).to_string()
+        } else {
+            query_string
+        };
+
+        req.push_str(&config.path.replace("%s", &query_string));
+    }
+
+    if config.http2 {
+        req.push_str(" HTTP/2\n");
+    } else {
+        req.push_str(" HTTP/1.1\n");
+    }
+
+    if !config.headers.keys().any(|i| i.contains("Host")) {
+        req.push_str(&("Host: ".to_owned() + &config.host));
+        req.push('\n');
+    }
+
+    for (key, value) in config.headers.iter() {
+        req.push_str(key);
+        req.push_str(": ");
+        req.push_str(&value.replace("{{random}}", &random_line(config.value_size)));
+        req.push('\n');
+    }
+
+    let body: String = if config.as_body && !query.is_empty() {
+        make_body(&config, &query)
+    } else {
+        config.body.to_owned()
+    };
+
+    if !body.is_empty() {
+        req.push('\n');
+        req.push_str(&body);
+        req.push('\n');
+    }
+
+    req
+}
